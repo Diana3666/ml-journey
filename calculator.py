@@ -21,4 +21,3 @@ else:
 # 3. Выводим результат (если он есть)
 if result is not None:
     print(f"Результат: {n} {op} {m} = {result}")
-    print(op)
