@@ -1,77 +1,113 @@
 import pandas as pd
+import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-df = pd.read_excel("cycle_45.xlsx")   # ← ПОСТАВЬ ИМЯ ФАЙЛА УДАЧНОГО ЦИКЛА
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import r2_score, mean_absolute_error
 
+# ============================================================
+# 1. ЗАГРУЗКА И ЧИСТКА
+# ============================================================
+df = pd.read_excel("cycle_45.xlsx")
 df.columns = df.columns.str.replace("\xa0", "", regex=False).str.strip()
 
 for col in df.columns:
     cleaned = (df[col].astype(str)
                .str.replace("\xa0", "", regex=False)
                .str.replace(" ", "", regex=False)
-               .str.replace("\t", "", regex=False)
                .str.replace(",", ".", regex=False))
     df[col] = pd.to_numeric(cleaned, errors="coerce")
 
 df = df.dropna()
 
-# --- Переводим штрихи в угол ---
-STRIPES_PER_TURN = 500
-DEG_PER_STRIPE = 360 / STRIPES_PER_TURN
-df["Угол_град"] = df["Деформация"] * DEG_PER_STRIPE
+# ============================================================
+# 2. FEATURE ENGINEERING
+# ============================================================
+df["Угол_град"] = df["Деформация"] * 360 / 500
 
-# --- НОВОЕ: вычисляем скорость деформации ---
-df["d_Деформация"] = df["Деформация"].diff()   # изменение штрихов
-df["d_Время"] = df["Время"].diff()             # изменение времени
-df["Скорость_деф"] = df["d_Деформация"] / df["d_Время"]  # штрихи в секунду
+# Скорость деформации (сглаженная в окне 10 точек)
+df["d_Д"] = df["Деформация"].diff()
+df["d_В"] = df["Время"].diff()
+df["Скорость"] = (df["d_Д"] / df["d_В"]).rolling(10, min_periods=1).mean()
 
-print("=== СТАТИСТИКА СКОРОСТИ ===")
-print(df["Скорость_деф"].describe())
+# Гомологическая температура
+df["T_гом"] = (df["Температура"] + 273.15) / 933
 
-# --- Строим 5 графиков ---
-fig, axes = plt.subplots(5, 1, figsize=(12, 14), sharex=True)
+df = df.fillna(0)
+df = df[df["Время"] > 5]   # убираем первые секунды
 
-axes[0].plot(df["Время"], df["Температура"], color="orange")
-axes[0].set_ylabel("Температура (°C)")
-axes[0].set_title("Температура")
+print("=== ДАННЫЕ ГОТОВЫ ===")
+print(f"Строк: {len(df)}")
+print(df[["Температура", "Время", "Напряжение", "Угол_град", "Скорость"]].describe())
+
+# ============================================================
+# 3. X и y
+# ============================================================
+feature_cols = ["Температура", "Время", "Напряжение", "Скорость"]
+X = df[feature_cols]
+y = df["Угол_град"]
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+print(f"\nОбучающих примеров: {len(X_train)}")
+print(f"Тестовых примеров: {len(X_test)}")
+
+# ============================================================
+# 4. МОДЕЛЬ 1: Линейная регрессия (baseline)
+# ============================================================
+print("\n=== LINEAR REGRESSION ===")
+lr = LinearRegression()
+lr.fit(X_train, y_train)
+y_pred_lr = lr.predict(X_test)
+
+print(f"R² = {r2_score(y_test, y_pred_lr):.4f}")
+print(f"MAE = {mean_absolute_error(y_test, y_pred_lr):.2f}°")
+print("\nКоэффициенты (что важнее):")
+for name, coef in zip(feature_cols, lr.coef_):
+    print(f"  {name}: {coef:+.4f}")
+
+# ============================================================
+# 5. МОДЕЛЬ 2: Random Forest
+# ============================================================
+print("\n=== RANDOM FOREST ===")
+rf = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
+rf.fit(X_train, y_train)
+y_pred_rf = rf.predict(X_test)
+
+print(f"R² = {r2_score(y_test, y_pred_rf):.4f}")
+print(f"MAE = {mean_absolute_error(y_test, y_pred_rf):.2f}°")
+print("\nВажность признаков:")
+for name, imp in sorted(zip(feature_cols, rf.feature_importances_),
+                         key=lambda x: -x[1]):
+    print(f"  {name}: {imp:.4f}")
+
+# ============================================================
+# 6. ГРАФИК ПРЕДСКАЗАНИЙ
+# ============================================================
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+axes[0].scatter(y_test, y_pred_lr, alpha=0.3, color="blue")
+axes[0].plot([0, 160], [0, 160], "r--", label="Идеальное предсказание")
+axes[0].set_xlabel("Реальный угол (°)")
+axes[0].set_ylabel("Предсказанный угол (°)")
+axes[0].set_title(f"Linear Regression (R²={r2_score(y_test, y_pred_lr):.3f})")
+axes[0].legend()
 axes[0].grid(True)
 
-axes[1].plot(df["Время"], df["Напряжение"], color="red")
-axes[1].set_ylabel("Напряжение (МПа)")
-axes[1].set_title("Напряжение")
+axes[1].scatter(y_test, y_pred_rf, alpha=0.3, color="green")
+axes[1].plot([0, 160], [0, 160], "r--", label="Идеальное предсказание")
+axes[1].set_xlabel("Реальный угол (°)")
+axes[1].set_ylabel("Предсказанный угол (°)")
+axes[1].set_title(f"Random Forest (R²={r2_score(y_test, y_pred_rf):.3f})")
+axes[1].legend()
 axes[1].grid(True)
 
-axes[2].plot(df["Время"], df["Угол_град"], color="blue")
-axes[2].set_ylabel("Угол (°)")
-axes[2].set_title("Угол закручивания")
-axes[2].grid(True)
-
-axes[3].plot(df["Время"], df["Скорость_деф"], color="purple")
-axes[3].set_ylabel("Скорость (штрих/сек)")
-axes[3].set_title("Скорость деформации — ключевой признак!")
-axes[3].grid(True)
-
-# Общий график: температура + деформация
-ax5 = axes[4]
-ax5.plot(df["Время"], df["Температура"], color="orange", label="Температура")
-ax5.set_ylabel("Температура (°C)", color="orange")
-ax5.tick_params(axis="y", labelcolor="orange")
-ax5.grid(True)
-
-ax5_twin = ax5.twinx()
-ax5_twin.plot(df["Время"], df["Угол_град"], color="blue", label="Угол")
-ax5_twin.set_ylabel("Угол (°)", color="blue")
-ax5_twin.tick_params(axis="y", labelcolor="blue")
-
-axes[4].set_xlabel("Время (сек)")
-axes[4].set_title("Температура vs Угол (связь!)")
-
 plt.tight_layout()
-plt.savefig("cycle_45_plots.png", dpi=100)
-print("\n✅ Графики сохранены: cycle_XX_plots.png")
-
-# --- Сохраняем обработанные данные в CSV ---
-df.to_csv("cycle_45_processed.csv", index=False)
-print("✅ Данные сохранены: cycle_XX_processed.csv")
+plt.savefig("first_model.png", dpi=100)
+print("\n График сохранён: first_model.png")
