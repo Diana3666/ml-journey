@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
+
 from sklearn.metrics import r2_score, mean_absolute_error
 
 # ============================================================
@@ -51,9 +51,15 @@ feature_cols = ["Температура", "Время", "Напряжение", 
 X = df[feature_cols]
 y = df["Угол_град"]
 
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
-)
+# деление для временных рядов:
+split_idx = int(len(df) * 0.8)
+X_train = X.iloc[:split_idx]
+X_test = X.iloc[split_idx:]
+y_train = y.iloc[:split_idx]
+y_test = y.iloc[split_idx:]
+
+print(f"Обучающих: {len(X_train)} (первые 80% по времени)")
+print(f"Тестовых:  {len(X_test)} (последние 20% по времени)")
 
 print(f"\nОбучающих примеров: {len(X_train)}")
 print(f"Тестовых примеров: {len(X_test)}")
