@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import joblib
 import numpy as np
+import pandas as pd
 
 # Загружаем модель при старте сервера
 model = joblib.load("models/model.pkl")
@@ -30,7 +31,6 @@ class PredictResponse(BaseModel):
 
 
 # ===== ЭНДПОИНТЫ =====
-
 @app.get("/")
 def root():
     return {
@@ -51,15 +51,20 @@ def predict(req: PredictRequest):
     T_gom = (req.temperature + 273.15) / 933.0
     log_t = np.log1p(req.time)
 
-    X = np.array([[
-        req.temperature,
-        req.time,
-        req.speed,
-        T_gom,
-        log_t,
-        req.stress
-    ]])
+    # Формируем признаки как DataFrame — с именами колонок
+    X = pd.DataFrame(
+        [[
+            req.temperature,
+            req.time,
+            req.speed,
+            T_gom,
+            log_t,
+            req.stress
+        ]],
+        columns=feature_cols
+    )
 
+    # Предсказание
     angle_deg = float(model.predict(X)[0])
     angle_rad = angle_deg * np.pi / 180
     gamma_pct = angle_rad * 2 / 40 * 100   # r=2, L=40
