@@ -36,20 +36,33 @@ from pysr import PySRRegressor
 
 print("\n🔍 PySR начинает поиск формулы... (это может занять 5-15 минут)")
 
+
+
 model = PySRRegressor(
-    niterations=40,           # количество итераций эволюции
-    populations=15,           # размер популяции
+    niterations=200,                    # ← было 40, стало 200
+    populations=30,                     # ← было 15
+    population_size=50,
+    
     binary_operators=["+", "-", "*", "/"],
-    unary_operators=["exp", "log", "sqrt", "sin", "cos"],
-    maxsize=20,               # максимальный размер формулы
-    model_selection="best",   # выбираем лучшую
+    unary_operators=["exp", "log", "sqrt"],   # ← убрал sin, cos
+    
+    maxsize=25,                         # ← было 20
+    
+    # --- НОВОЕ: настройки для лучшего поиска ---
+    parsimony=0.001,                    # ← штраф за сложность
+    constraints={"sqrt": 5, "log": 5, "exp": 5},  # ← ограничения
+    
+    model_selection="best",
     progress=True,
     verbosity=1,
     temp_equation_file=True,
+    random_state=42,
+    
+    # Ускорение
+    procs=0,                            # ← все ядра CPU
 )
 
 model.fit(X, y)
-
 # ============================================================
 # 4. ВЫВОД РЕЗУЛЬТАТОВ
 # ============================================================
